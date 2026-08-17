@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "must_hook": {
+      "command": "python3",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/must_hook_server.py"]
+    }
+  }
+}

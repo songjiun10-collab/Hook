@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "hook",
+  "version": "0.1.0",
+  "description": "Severity-tiered PreToolUse/PostToolUse guard hooks for Claude Code - override mechanism with audit trail, self-reported decision records, and an MCP-schema-enforced (must_hook) recording channel. Project-agnostic.",
+  "author": {
+    "name": "songjiun10-collab"
+  }
+}
