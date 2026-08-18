@@ -15,7 +15,7 @@ import json
 import re
 import sys
 
-from _hook_common import (allow, allow_with_override,
+from _hook_common import (_HEREDOC_RE, allow, allow_with_override,
                            bash_override_with_totp, deny, is_subagent_call,
                            require_decision_or_deny)
 
@@ -23,7 +23,6 @@ HOOK_NAME = "protect_destructive"
 SEVERITY = "CRITICAL"
 
 _STMT_START = r"(?:^|&&|\|\||;|\n|\||\(|`|\bdo\b|\bthen\b|\belse\b)\s*"
-_HEREDOC_RE = re.compile(r"<<-?\s*[\"']?(\w+)[\"']?.*?\n.*?^\1\b", re.DOTALL | re.MULTILINE)
 
 _RM_RE = re.compile(
     _STMT_START + r"rm\s+(?P<args>[^\n;&|`]*)"

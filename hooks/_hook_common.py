@@ -181,6 +181,14 @@ _BASH_OVERRIDE_RE = re.compile(
     r"#\s*HNCS-OVERRIDE:\s*(?P<rule>[\w.-]+)\s*:\s*(?P<reason>.+?)\s*$")
 _TOTP_KEY_RE = re.compile(r"key=(\d{6})")
 
+# Strips heredoc bodies (`<<EOF ... EOF`) out of a Bash command string
+# before other regexes scan it - shared by bash_override() below (so a
+# heredoc payload can't smuggle in a fake override marker, see its
+# docstring) and by protect_branch.py/protect_test_coverage.py/
+# protect_destructive.py, which each stripped their own copy of this
+# before matching commit/push/destructive-command patterns.
+_HEREDOC_RE = re.compile(r"<<-?\s*[\"']?(\w+)[\"']?.*?\n.*?^\1\b", re.DOTALL | re.MULTILINE)
+
 _SENTINEL_MAX_AGE_SECONDS = 600  # 10min - forces a fresh, deliberate write
 _MEDIUM_APPROVAL_MAX_AGE_SECONDS = 600
 _DECISION_RECORD_MAX_AGE_SECONDS = 600
@@ -342,7 +350,13 @@ def bash_override(rule, command):
     a Bash command string. Returns the reason string if present and the
     rule name matches, else None. Does not care where in the command the
     marker appears (checked line by line) - shell comments are valid
-    anywhere a new logical line/statement can start."""
+    anywhere a new logical line/statement can start.
+
+    Heredoc bodies are stripped first (_HEREDOC_RE) so a marker-shaped
+    line inside a heredoc payload (e.g. writing a `.env` file with `#
+    HNCS-OVERRIDE: ...` as file *content*, not a real trailing shell
+    comment) isn't mistaken for a genuine override."""
+    command = _HEREDOC_RE.sub("", command)
     for line in command.splitlines():
         m = _BASH_OVERRIDE_RE.search(line)
         if m and m.group("rule") == rule and m.group("reason").strip():

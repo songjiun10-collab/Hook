@@ -40,6 +40,37 @@ class TestBashOverrideParsing(unittest.TestCase):
     def test_no_marker_at_all_returns_none(self):
         self.assertIsNone(self.hc.bash_override("protect_never_touch", "git status"))
 
+    def test_marker_inside_heredoc_body_is_ignored(self):
+        """Codex review P1 #3: a heredoc payload (e.g. writing a `.env`
+        file) that happens to contain override-marker-shaped text as file
+        *content* must not be treated as a real override."""
+        cmd = (
+            "cat <<'EOF' > .env\n"
+            "SECRET=xoxb-123456-abcdefghij\n"
+            "# HNCS-OVERRIDE: protect_never_touch: fake, embedded in heredoc body\n"
+            "EOF\n"
+        )
+        self.assertIsNone(self.hc.bash_override("protect_never_touch", cmd))
+
+    def test_marker_after_heredoc_as_real_trailing_comment_still_works(self):
+        """Regression: a genuine trailing comment on the same statement as
+        a heredoc-writing command must still be recognized."""
+        cmd = (
+            "cat <<'EOF' > .env\n"
+            "SECRET=xoxb-123456-abcdefghij\n"
+            "EOF\n"
+            "# HNCS-OVERRIDE: protect_never_touch: 사용자 승인, 실제 사유\n"
+        )
+        self.assertEqual(
+            self.hc.bash_override("protect_never_touch", cmd),
+            "사용자 승인, 실제 사유")
+
+    def test_plain_trailing_comment_without_heredoc_still_works(self):
+        cmd = 'echo x >> brands/hasselblad.py  # HNCS-OVERRIDE: protect_never_touch: 그냥 확인'
+        self.assertEqual(
+            self.hc.bash_override("protect_never_touch", cmd),
+            "그냥 확인")
+
 
 class TestIsSubagentCall(unittest.TestCase):
     def setUp(self):
