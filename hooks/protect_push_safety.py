@@ -26,10 +26,13 @@ best-effort net, not a guarantee.
 
 **Severity**: force-push is CRITICAL, with an override available via a
 trailing `# HNCS-OVERRIDE: protect_push_safety: <reason>` comment (see
-`_hook_common.py`'s module docstring for the tier design). The
-authorship-mismatch check has no override - there's no legitimate reason
-to push with the wrong author when the fix is one command; it's always
-resolvable rather than something to consciously bypass.
+`_hook_common.py`'s module docstring for the tier design), optionally
+followed by `key=<6-digit TOTP code>` as an added confirmation step (see
+`bash_override_with_totp()`'s docstring - friction against unconscious
+override use, not a hard security boundary). The authorship-mismatch
+check has no override - there's no legitimate reason to push with the
+wrong author when the fix is one command; it's always resolvable rather
+than something to consciously bypass.
 
 Adjust `_CLAUDE_AUTHOR_EMAIL` for your own project's expected commit
 author identity if adopting this hook elsewhere."""
@@ -38,8 +41,9 @@ import re
 import subprocess
 import sys
 
-from _hook_common import (allow, allow_with_override, bash_override, deny,
-                           is_subagent_call, require_decision_or_deny)
+from _hook_common import (allow, allow_with_override,
+                           bash_override_with_totp, deny, is_subagent_call,
+                           require_decision_or_deny)
 
 HOOK_NAME = "protect_push_safety"
 SEVERITY = "CRITICAL"
@@ -100,10 +104,12 @@ def main():
                     severity=SEVERITY, target=command, decision=decision,
                 )
                 return
-            override_reason = bash_override(HOOK_NAME, command)
+            override_reason, totp_configured, totp_verified = bash_override_with_totp(
+                HOOK_NAME, command)
             if override_reason:
                 allow_with_override(HOOK_NAME, SEVERITY, HOOK_NAME, command, override_reason,
-                                     decision=decision)
+                                     decision=decision, totp_verified=totp_verified,
+                                     totp_configured=totp_configured)
                 return
             deny(
                 HOOK_NAME,
@@ -112,7 +118,10 @@ def main():
                 "fetch and rebase instead - never force, even with "
                 "--force-with-lease, unless explicitly authorized. To "
                 "override: add a trailing `# HNCS-OVERRIDE: "
-                f"{HOOK_NAME}: <reason>` comment to this command.",
+                f"{HOOK_NAME}: <reason>` comment to this command. If a TOTP "
+                "secret is configured (HNCS_HOOK_OVERRIDE_TOTP_SECRET), "
+                "also append ` key=<6-digit code>` - a wrong code "
+                "invalidates the override outright.",
                 severity=SEVERITY, target=command, decision=decision,
             )
             return

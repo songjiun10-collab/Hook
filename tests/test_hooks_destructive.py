@@ -10,6 +10,8 @@ import sys
 import tempfile
 import unittest
 
+import pyotp
+
 _HOOKS_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "hooks")
 sys.path.insert(0, _HOOKS_DIR)
@@ -72,6 +74,7 @@ class TestProtectDestructiveEndToEnd(unittest.TestCase):
             "HNCS_HOOK_OVERRIDE_AUDIT_LOG": os.path.join(self._tmpdir, "override_audit.jsonl"),
             "HNCS_HOOK_DECISION_RECORD_SENTINEL": os.path.join(self._tmpdir, ".pending_decision_record.json"),
         })
+        self._env.pop("HNCS_HOOK_OVERRIDE_TOTP_SECRET", None)
 
     def tearDown(self):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
@@ -132,6 +135,39 @@ class TestProtectDestructiveEndToEnd(unittest.TestCase):
         문제가 가장 치명적인 등급이라 아예 통로를 없애다."""
         cmd = "git reset --hard  # HNCS-OVERRIDE: protect_destructive: 의도된 초기화"
         self.assertEqual(self._run_hook(cmd, agent_id="agt_1"), "deny")
+
+    def test_override_without_totp_secret_configured_still_falls_back_to_allow(self):
+        """TOTP 추가 확인 단계: secret 미설정이면 하드 실패가 아니라
+        기존 방식대로 통과 - 감사 로그에 totp_configured=false가 남는다."""
+        cmd = "git reset --hard  # HNCS-OVERRIDE: protect_destructive: 의도된 초기화"
+        self._write_decision_record(cmd)
+        self.assertEqual(self._run_hook(cmd), "allow")
+        audit_path = os.path.join(self._tmpdir, "override_audit.jsonl")
+        with open(audit_path, encoding="utf-8") as f:
+            entry = json.loads(f.readline())
+        self.assertFalse(entry["totp_configured"])
+        self.assertFalse(entry["totp_verified"])
+
+    def test_override_with_correct_totp_code_allowed_and_audited(self):
+        secret = pyotp.random_base32()
+        self._env["HNCS_HOOK_OVERRIDE_TOTP_SECRET"] = secret
+        code = pyotp.TOTP(secret).now()
+        cmd = f"git reset --hard  # HNCS-OVERRIDE: protect_destructive: 의도된 초기화 key={code}"
+        self._write_decision_record(cmd)
+        self.assertEqual(self._run_hook(cmd), "allow")
+        audit_path = os.path.join(self._tmpdir, "override_audit.jsonl")
+        with open(audit_path, encoding="utf-8") as f:
+            entry = json.loads(f.readline())
+        self.assertTrue(entry["totp_configured"])
+        self.assertTrue(entry["totp_verified"])
+
+    def test_override_with_wrong_totp_code_denied(self):
+        secret = pyotp.random_base32()
+        self._env["HNCS_HOOK_OVERRIDE_TOTP_SECRET"] = secret
+        wrong_code = "000000" if pyotp.TOTP(secret).now() != "000000" else "111111"
+        cmd = f"git reset --hard  # HNCS-OVERRIDE: protect_destructive: 의도된 초기화 key={wrong_code}"
+        self._write_decision_record(cmd)
+        self.assertEqual(self._run_hook(cmd), "deny")
 
 
 if __name__ == "__main__":

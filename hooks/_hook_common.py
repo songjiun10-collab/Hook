@@ -125,7 +125,30 @@ Every successful override is logged to `override_audit.jsonl` (separate
 from `violations_log.jsonl`, which is for calls that were actually
 blocked) with `{timestamp, rule, severity, target, reason, git_sha}` -
 `git_sha` is always computed here, never taken from the caller, so the
-audit trail can't be backdated or spoofed by whatever wrote the marker."""
+audit trail can't be backdated or spoofed by whatever wrote the marker.
+
+## TOTP added-confirmation step (CRITICAL override only)
+
+**정정(2026-08-18, "설계 굿?" 리뷰)**: 최초 안은 이걸 "물리적 키"로,
+"override self-servable 문제를 완화"한다고 프레이밍했는데 과장이었다.
+TOTP secret을 `HNCS_HOOK_OVERRIDE_TOTP_SECRET` env var에 두면, 에이전트가
+Bash로 `echo $HNCS_HOOK_OVERRIDE_TOTP_SECRET` 한 줄이면 secret을 그대로
+읽고 스스로 코드를 계산할 수 있다 - 악의적이거나 판단이 틀린 에이전트를
+막는 방어력은 사실상 0. 이 메커니즘이 실제로 막는 건 "에이전트가 사용자
+승인 없이 무의식적으로/일상적으로 CRITICAL override를 남발하는 것"뿐이고,
+그게 이 파일 상단의 훅 철학("훅은 위험한 행동을 무의식적으로 해버리는
+것만 막는다")과 정확히 일치하는 수준의 부주의 방지용 추가 확인 단계
+(added friction)다 - 완전한 검증이 아니다. `HNCS_HOOK_OVERRIDE_TOTP_SECRET`은
+저장소에 커밋하지 않고 사용자가 환경변수로 직접 설정하며, 인증 앱과 같은
+secret을 공유해서 코드는 대화창에서 사용자가 직접 불러주는 방식을
+전제로 한다 - 에이전트가 스스로 env를 읽어서 계산하지 않는다는 신뢰가
+전제라는 뜻이다.
+
+포맷: `# HNCS-OVERRIDE: <rule>: <reason> key=<6자리 코드>` - 기존
+`bash_override()`가 파싱하는 마커에 `key=<code>`를 덧붙인다.
+`bash_override()` 자체는 이 기능으로 전혀 안 바뀐다(시그니처/리턴 타입
+그대로) - 대신 `bash_override_with_totp()`가 CRITICAL 전용 훅에서만
+쓰인다."""
 import json
 import os
 import re
@@ -133,6 +156,8 @@ import subprocess
 import sys
 import time
 from datetime import datetime, timezone
+
+import pyotp
 
 _HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
 _LOG_PATH = os.environ.get(
@@ -154,6 +179,7 @@ SEVERITIES = ("LOW", "MEDIUM", "HIGH", "CRITICAL")
 
 _BASH_OVERRIDE_RE = re.compile(
     r"#\s*HNCS-OVERRIDE:\s*(?P<rule>[\w.-]+)\s*:\s*(?P<reason>.+?)\s*$")
+_TOTP_KEY_RE = re.compile(r"key=(\d{6})")
 
 _SENTINEL_MAX_AGE_SECONDS = 600  # 10min - forces a fresh, deliberate write
 _MEDIUM_APPROVAL_MAX_AGE_SECONDS = 600
@@ -274,7 +300,8 @@ def deny(hook_name, reason, severity="HIGH", target=None, decision_id=None, deci
         "permissionDecisionReason": reason}}))
 
 
-def allow_with_override(hook_name, severity, rule, target, reason, decision_id=None, decision=_UNSET):
+def allow_with_override(hook_name, severity, rule, target, reason, decision_id=None, decision=_UNSET,
+                         totp_verified=None, totp_configured=None):
     """MID/HIGH/CRITICAL tier, override matched: log to both the violations
     log (so the near-miss is visible in the same place as a real deny)
     and the override audit log (so it's separately searchable), then
@@ -293,12 +320,20 @@ def allow_with_override(hook_name, severity, rule, target, reason, decision_id=N
     consumed it - pass that resolved value in via `decision=` so this
     doesn't try to look it up again (would find nothing, single-use
     sentinel). Default _UNSET preserves old behavior for any caller not
-    yet on the mandatory-gate flow."""
+    yet on the mandatory-gate flow.
+
+    `totp_verified`/`totp_configured`: optional, only set by CRITICAL
+    callers using `bash_override_with_totp()` (see its docstring) - passed
+    straight through to `_record_override()`, which only adds them to the
+    audit entry when not None. Callers not on the TOTP path (i.e.
+    everything using plain `bash_override()`) leave these at their None
+    default and the audit entry shape is unchanged."""
     dr = decision_record(rule, target=target, decision_id=decision_id) if decision is _UNSET else decision
     note = f"OVERRIDDEN ({severity}, rule={rule}): {reason}"
     _log_event(hook_name, severity, note, overridden=True,
                decision_kind="override", target=target, decision=dr)
-    _record_override(rule, severity, target, reason, decision=dr)
+    _record_override(rule, severity, target, reason, decision=dr,
+                      totp_verified=totp_verified, totp_configured=totp_configured)
     allow()
 
 
@@ -313,6 +348,57 @@ def bash_override(rule, command):
         if m and m.group("rule") == rule and m.group("reason").strip():
             return m.group("reason").strip()
     return None
+
+
+def verify_totp_override_key(code):
+    """3-state: `True` if `code` verifies against the TOTP secret in
+    `HNCS_HOOK_OVERRIDE_TOTP_SECRET` (base32, `valid_window=1` to tolerate
+    normal clock drift across one 30s step either side - also means a code
+    is accepted for up to ~90s, which is fine for an added-friction check,
+    not a replay-proof one), `False` if it doesn't, `None` if the env var
+    isn't set at all (secret not configured - caller decides how to
+    fall back, see bash_override_with_totp())."""
+    secret = os.environ.get("HNCS_HOOK_OVERRIDE_TOTP_SECRET")
+    if not secret:
+        return None
+    return pyotp.TOTP(secret).verify(code, valid_window=1)
+
+
+def bash_override_with_totp(rule, command):
+    """CRITICAL-only added-confirmation wrapper around `bash_override()` -
+    that function itself stays completely unmodified (same signature, same
+    return type) so the other 8 guard hooks that call it are untouched by
+    this. Only `protect_destructive.py` and `protect_push_safety.py`'s
+    force-push branch call this instead.
+
+    Expects the override marker's reason to optionally carry a trailing
+    `key=<6-digit code>` (format: `# HNCS-OVERRIDE: <rule>: <reason>
+    key=<code>`) and checks it against verify_totp_override_key(). Returns
+    `(reason_or_None, totp_configured, totp_verified)`:
+
+    - No `# HNCS-OVERRIDE: <rule>: ...` marker at all (bash_override()
+      returns None): `(None, False, False)`.
+    - Marker present but no `key=<6 digits>` anywhere in the command, OR a
+      key is present but no TOTP secret is configured
+      (verify_totp_override_key() returns None): `(reason, False, False)`
+      - override still honored (added friction, not a hard gate), just
+        flagged in the audit log as "not code-checked".
+    - Key present, secret configured, code wrong: the override itself is
+      invalidated - `(None, True, False)`.
+    - Key present, secret configured, code correct: `(reason, True, True)`.
+    """
+    reason = bash_override(rule, command)
+    if reason is None:
+        return None, False, False
+    m = _TOTP_KEY_RE.search(command)
+    if not m:
+        return reason, False, False
+    verified = verify_totp_override_key(m.group(1))
+    if verified is None:
+        return reason, False, False
+    if verified is False:
+        return None, True, False
+    return reason, True, True
 
 
 def sentinel_override(rule, target):
@@ -619,7 +705,8 @@ def _decision_payload(decision):
     }
 
 
-def _record_override(rule, severity, target, reason, decision=None):
+def _record_override(rule, severity, target, reason, decision=None,
+                      totp_verified=None, totp_configured=None):
     """git_sha is recorded for every override regardless of severity - it's
     an audit-trail field (proves which commit the override was granted
     at), not a gating check.
@@ -628,7 +715,13 @@ def _record_override(rule, severity, target, reason, decision=None):
     was found - attached under a `decision` key when present. Callers
     must pass an already-resolved lookup (see allow_with_override()/
     allow_with_medium_approval() docstrings for why this isn't looked up
-    here directly - the sentinel is single-use/consumed on read)."""
+    here directly - the sentinel is single-use/consumed on read).
+
+    `totp_verified`/`totp_configured`: optional (see
+    bash_override_with_totp()'s docstring for the 3-state meaning) - added
+    to the entry as `totp_verified`/`totp_configured` keys only when not
+    None, so existing entries/call sites that never pass these stay
+    byte-identical in shape."""
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "rule": rule,
@@ -640,6 +733,10 @@ def _record_override(rule, severity, target, reason, decision=None):
     payload = _decision_payload(decision)
     if payload:
         entry["decision"] = payload
+    if totp_configured is not None:
+        entry["totp_configured"] = totp_configured
+    if totp_verified is not None:
+        entry["totp_verified"] = totp_verified
     try:
         with open(_OVERRIDE_AUDIT_PATH, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
