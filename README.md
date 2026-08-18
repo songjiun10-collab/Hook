@@ -28,7 +28,7 @@ A Claude Code plugin providing:
   `tools/eval_hook_judgments.py` can later compare what the agent
   predicted against what actually happened (blocked / a human was asked
   (structurally unobservable) / reverted / not reverted).
-- **7 guard hooks**: `protect_destructive` (CRITICAL — `rm -rf`,
+- **8 guard hooks**: `protect_destructive` (CRITICAL — `rm -rf`,
   `git reset --hard`, `git clean -f`, `git branch -D`),
   `protect_push_safety` (CRITICAL force-push / HIGH commit authorship),
   `protect_branch` (HIGH — committing/pushing to main/master/detached
@@ -37,7 +37,9 @@ A Claude Code plugin providing:
   (HIGH — marking a PR ready without a recorded whole-branch review),
   `protect_agent_model_naming` (LOW — Agent dispatch missing `model` or
   using haiku), `protect_test_coverage` (HIGH — committing a new source
-  file with no test).
+  file with no test), `protect_secret_exposure` (HIGH — an Edit/Write/
+  MultiEdit or Bash call whose content matches an AWS access key, a
+  GitHub token, a private key header, or a Slack token).
 - **`must_hook_server.py`** — the local MCP server backing the schema
   enforcement above.
 - **`tools/rotate_hook_logs.py`** / **`tools/eval_hook_judgments.py`** —
@@ -98,7 +100,7 @@ pip install -r requirements.txt
 python3 -m unittest discover -s tests
 ```
 
-182 tests, all hook logic covered end-to-end via real subprocess
+208 tests, all hook logic covered end-to-end via real subprocess
 invocation (not mocked) — each test isolates its log/sentinel files via
 `HNCS_HOOK_*` environment variable overrides so a test run never touches
 this repo's own `hooks/violations_log.jsonl`.
