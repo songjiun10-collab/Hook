@@ -7,13 +7,17 @@ scratch dirs, `git reset --hard`, `git clean` with a force flag, and
 instead.
 
 Override: trailing `# HNCS-OVERRIDE: protect_destructive: <reason>`
-comment on the command."""
+comment on the command, optionally followed by `key=<6-digit TOTP code>`
+as an added confirmation step (see _hook_common.py's
+bash_override_with_totp() docstring - this is friction against
+unconscious override use, not a hard security boundary)."""
 import json
 import re
 import sys
 
-from _hook_common import (allow, allow_with_override, bash_override, deny,
-                           is_subagent_call, require_decision_or_deny)
+from _hook_common import (allow, allow_with_override,
+                           bash_override_with_totp, deny, is_subagent_call,
+                           require_decision_or_deny)
 
 HOOK_NAME = "protect_destructive"
 SEVERITY = "CRITICAL"
@@ -99,10 +103,11 @@ def main():
         )
         return
 
-    override_reason = bash_override(HOOK_NAME, command)
+    override_reason, totp_configured, totp_verified = bash_override_with_totp(HOOK_NAME, command)
     if override_reason:
         allow_with_override(HOOK_NAME, SEVERITY, HOOK_NAME, command, override_reason,
-                             decision=decision)
+                             decision=decision, totp_verified=totp_verified,
+                             totp_configured=totp_configured)
         return
 
     deny(
@@ -110,7 +115,9 @@ def main():
         f"{reason} This hook denies by default - to override, add a "
         f"trailing `# HNCS-OVERRIDE: {HOOK_NAME}: <reason>` comment to the "
         "command, stating why this specific destructive action is intended "
-        "and safe.",
+        "and safe. If a TOTP secret is configured "
+        "(HNCS_HOOK_OVERRIDE_TOTP_SECRET), also append ` key=<6-digit "
+        "code>` - a wrong code invalidates the override outright.",
         severity=SEVERITY, target=command, decision=decision,
     )
 
