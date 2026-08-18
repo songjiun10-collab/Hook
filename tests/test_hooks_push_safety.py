@@ -17,6 +17,8 @@ import sys
 import tempfile
 import unittest
 
+import pyotp
+
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "hooks"))
 import protect_push_safety as hook  # noqa: E402
@@ -101,6 +103,7 @@ class TestHookEndToEnd(unittest.TestCase):
             "HNCS_HOOK_OVERRIDE_AUDIT_LOG": os.path.join(self._log_dir, "test_override_audit.jsonl"),
             "HNCS_HOOK_DECISION_RECORD_SENTINEL": os.path.join(self._log_dir, ".pending_decision_record.json"),
         })
+        self._env.pop("HNCS_HOOK_OVERRIDE_TOTP_SECRET", None)
         run = lambda *args: subprocess.run(  # noqa: E731
             args, cwd=self.repo, capture_output=True, text=True, check=True)
         run("git", "init", "-q")
@@ -186,6 +189,42 @@ class TestHookEndToEnd(unittest.TestCase):
         run("git", "add", "f.txt")
         run("git", "commit", "-q", "-m", "wrong author")
         cmd = "git push -u origin main  # HNCS-OVERRIDE: protect_push_safety: 사유"
+        self._write_decision_record(cmd)
+        self.assertEqual(self._run_hook(cmd), "deny")
+
+    def test_force_push_override_without_totp_secret_falls_back_to_allow(self):
+        """TOTP 추가 확인 단계: secret 미설정이면 하드 실패가 아니라
+        기존 방식대로 통과 - 감사 로그에 totp_configured=false가 남는다."""
+        cmd = ("git push --force origin main"
+               "  # HNCS-OVERRIDE: protect_push_safety: 사용자 명시 승인")
+        self._write_decision_record(cmd)
+        self.assertEqual(self._run_hook(cmd), "allow")
+        audit_path = os.path.join(self._log_dir, "test_override_audit.jsonl")
+        with open(audit_path, encoding="utf-8") as f:
+            entry = json.loads(f.readline())
+        self.assertFalse(entry["totp_configured"])
+        self.assertFalse(entry["totp_verified"])
+
+    def test_force_push_override_with_correct_totp_code_allowed_and_audited(self):
+        secret = pyotp.random_base32()
+        self._env["HNCS_HOOK_OVERRIDE_TOTP_SECRET"] = secret
+        code = pyotp.TOTP(secret).now()
+        cmd = ("git push --force origin main"
+               f"  # HNCS-OVERRIDE: protect_push_safety: 사용자 명시 승인 key={code}")
+        self._write_decision_record(cmd)
+        self.assertEqual(self._run_hook(cmd), "allow")
+        audit_path = os.path.join(self._log_dir, "test_override_audit.jsonl")
+        with open(audit_path, encoding="utf-8") as f:
+            entry = json.loads(f.readline())
+        self.assertTrue(entry["totp_configured"])
+        self.assertTrue(entry["totp_verified"])
+
+    def test_force_push_override_with_wrong_totp_code_denied(self):
+        secret = pyotp.random_base32()
+        self._env["HNCS_HOOK_OVERRIDE_TOTP_SECRET"] = secret
+        wrong_code = "000000" if pyotp.TOTP(secret).now() != "000000" else "111111"
+        cmd = ("git push --force origin main"
+               f"  # HNCS-OVERRIDE: protect_push_safety: 사용자 명시 승인 key={wrong_code}")
         self._write_decision_record(cmd)
         self.assertEqual(self._run_hook(cmd), "deny")
 
