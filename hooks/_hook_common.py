@@ -93,7 +93,7 @@ LOW 등급은 이 게이트 대상이 아님 - LOW의 "마찰 없음" 설계는 
 원래는 "Write 툴로 `.pending_decision_record.json`에 이런 모양 JSON을
 써라"였는데, 이건 자유 텍스트라 필드 누락/타입 오류/범위 밖 confidence를
 막을 수단이 나중에 읽는 `decision_record()`쪽 검증뿐이었다. 이제는
-`must_hook_server.py`가 노출하는 `mcp__must_hook__write_decision_record`
+`must_hook_server.py`가 노출하는 `mcp__plugin_hook_must_hook__write_decision_record`
 MCP 툴 호출을 안내한다 - 파라미터 타입 힌트 + pydantic `Field` 제약
 (severity는 LOW/MEDIUM/HIGH/CRITICAL 패턴, confidence는 0.0-1.0,
 reason/expected_risk는 non-empty)이 MCP 프로토콜 단에서 검증돼서,
@@ -579,7 +579,7 @@ def require_decision_or_deny(hook_name, severity, target, no_decision_reason, de
             f"{no_decision_reason} 이 등급(MEDIUM/HIGH/CRITICAL)은 override/"
             "승인/ask 여부와 무관하게 decision record가 먼저 있어야 함 "
             "(강제, 예외 없음). "
-            "mcp__must_hook__write_decision_record 툴을 "
+            "mcp__plugin_hook_must_hook__write_decision_record 툴을 "
             f'rule="{hook_name}", target="{target}", severity=<자기평가 '
             "등급>, confidence=<0.0-1.0>, reason=<판단 근거>, "
             "expected_risk=<예상 위험>으로 먼저 호출하고 재시도할 것 "

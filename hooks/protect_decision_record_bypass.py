@@ -52,7 +52,7 @@ def main():
         f"{file_path}는 must_hook_server.py의 write_decision_record MCP 툴로만 "
         "써야 함 - Write/Edit로 직접 쓰는 건 스키마 검증을 우회하는 "
         "경로라 항상 막힘, override 없음. "
-        "mcp__must_hook__write_decision_record 툴을 호출할 것.",
+        "mcp__plugin_hook_must_hook__write_decision_record 툴을 호출할 것.",
         severity=SEVERITY, target=file_path,
     )
 
