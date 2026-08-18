@@ -11,7 +11,7 @@ to install it.
 python3 -m unittest discover -s tests
 ```
 
-`unittest` only, no pytest. Full suite green before every commit — 182
+`unittest` only, no pytest. Full suite green before every commit — 208
 tests as of the last count, every hook exercised end-to-end via real
 `subprocess.run([sys.executable, hook.__file__], ...)` calls, not mocked.
 Every test isolates its own log/sentinel files via `HNCS_HOOK_*`

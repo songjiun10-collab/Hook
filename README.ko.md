@@ -27,7 +27,7 @@ Claude Code 플러그인으로, 다음을 제공함:
   `tools/eval_hook_judgments.py`가 에이전트의 예측과 실제로 벌어진 일
   (차단됨 / 사람한테 물어봤지만 답은 구조적으로 관측 불가 / revert됨 /
   안 됨)을 비교할 수 있게 함.
-- **가드 훅 7개**: `protect_destructive`(CRITICAL - `rm -rf`,
+- **가드 훅 8개**: `protect_destructive`(CRITICAL - `rm -rf`,
   `git reset --hard`, `git clean -f`, `git branch -D`),
   `protect_push_safety`(force-push는 CRITICAL / 커밋 작성자는 HIGH),
   `protect_branch`(HIGH - main/master/detached HEAD에 commit/push),
@@ -35,7 +35,10 @@ Claude Code 플러그인으로, 다음을 제공함:
   지시), `protect_ready_without_review`(HIGH - 전체-브랜치 리뷰 기록
   없이 PR을 ready로 전환), `protect_agent_model_naming`(LOW - Agent
   디스패치에 model 미지정 또는 haiku 사용),
-  `protect_test_coverage`(HIGH - 테스트 없이 새 소스 파일 커밋).
+  `protect_test_coverage`(HIGH - 테스트 없이 새 소스 파일 커밋),
+  `protect_secret_exposure`(HIGH - Edit/Write/MultiEdit나 Bash 호출
+  내용이 AWS 액세스 키, GitHub 토큰, private key 헤더, Slack 토큰
+  패턴과 일치).
 - **`must_hook_server.py`** - 위 스키마 강제를 담당하는 로컬 MCP 서버.
 - **`tools/rotate_hook_logs.py`** / **`tools/eval_hook_judgments.py`** -
   독립 유지관리 스크립트(훅 체인에는 안 걸림, 수동 또는 스케줄 실행).
@@ -93,7 +96,7 @@ pip install -r requirements.txt
 python3 -m unittest discover -s tests
 ```
 
-182개 테스트, 전부 실제 subprocess 실행으로 훅 로직을 end-to-end
+208개 테스트, 전부 실제 subprocess 실행으로 훅 로직을 end-to-end
 확인함(모킹 아님) - 각 테스트가 `HNCS_HOOK_*` 환경변수 오버라이드로
 로그/sentinel 파일을 격리하기 때문에 테스트 실행이 이 레포 자체의
 `hooks/violations_log.jsonl`을 건드리지 않음.
