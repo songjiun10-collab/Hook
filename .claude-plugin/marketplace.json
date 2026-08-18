@@ -1,0 +1,15 @@
+{
+  "name": "hook",
+  "description": "Severity-tiered Claude Code guard hooks - project-agnostic PreToolUse/PostToolUse safety framework extracted from songjiun10-collab/hncs.",
+  "owner": {
+    "name": "songjiun10-collab"
+  },
+  "plugins": [
+    {
+      "name": "hook",
+      "source": "./",
+      "description": "Severity-tiered PreToolUse/PostToolUse guard hooks for Claude Code - override mechanism with audit trail, self-reported decision records, and an MCP-schema-enforced (must_hook) recording channel.",
+      "version": "0.1.0"
+    }
+  ]
+}
