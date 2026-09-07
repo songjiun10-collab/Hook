@@ -159,7 +159,25 @@ from datetime import datetime, timezone
 
 import pyotp
 
-_HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+# must_hook은 "project-agnostic"(plugin.json 설명)이라 여러 도구/프로젝트에서
+# 이 파일 그대로(공용 플러그인 캐시 설치본, 예: ~/.claude/plugins/cache/hook/
+# 또는 ~/.codex/plugins/cache/hook/) 쓰인다. __file__ 기준으로 _HOOKS_DIR을
+# 잡으면 항상 이 플러그인 캐시 경로를 가리켜서, 어느 프로젝트에서
+# write_decision_record MCP 툴을 호출하든 sentinel이 그 공용 캐시 경로에
+# 쓰인다 - 반면 각 프로젝트가 로컬에 vendoring한 하위 훅(예: Hncs 리포의
+# protect_decision_record_bypass.py가 import하는 .claude/hooks/_hook_common.py
+# 사본)은 __file__ 기준이 프로젝트 자신의 <tool>/hooks/라 정확해서, 두 sentinel이
+# 절대 같은 파일을 안 보고 항상 "decision record 없음"으로 deny된다(Hncs 리포,
+# 2026-09-04 발견 - Claude Code 쪽만 우선 로컬 hotpatch, 2026-09-07 Codex 쪽
+# 동일 버그 확인 후 이 근본 수정으로 승격). must_hook_server.py는 각 도구가
+# 활성 프로젝트 디렉터리를 cwd로 두고 스폰하므로(lsof -p <pid>로 cwd가 세션의
+# 프로젝트/워크트리 루트와 일치함을 실측) 프로젝트 루트는 os.getcwd() 기준이
+# 맞다. 다만 하위 디렉토리 이름(.claude/hooks vs .codex/hooks)은 도구마다
+# 달라서, 이 파일 자신이 어느 도구의 플러그인 캐시에서 실행되고 있는지
+# (__file__ 경로에 .claude/plugins 또는 .codex/plugins가 있는지)로 판별한다.
+_CACHE_PATH_PARTS = os.path.abspath(__file__).split(os.sep)
+_TOOL_HOOKS_SUBDIR = ".codex" if ".codex" in _CACHE_PATH_PARTS else ".claude"
+_HOOKS_DIR = os.path.join(os.getcwd(), _TOOL_HOOKS_SUBDIR, "hooks")
 _LOG_PATH = os.environ.get(
     "HNCS_HOOK_VIOLATIONS_LOG", os.path.join(_HOOKS_DIR, "violations_log.jsonl"))
 _OVERRIDE_AUDIT_PATH = os.environ.get(
