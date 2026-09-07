@@ -34,8 +34,8 @@ check has no override - there's no legitimate reason to push with the
 wrong author when the fix is one command; it's always resolvable rather
 than something to consciously bypass.
 
-Adjust `_CLAUDE_AUTHOR_EMAIL` for your own project's expected commit
-author identity if adopting this hook elsewhere."""
+The default HNCS identities are kept in `_ALLOWED_AUTHOR_EMAILS`; adjust
+that set for a project with a different trusted tool identity."""
 import json
 import re
 import subprocess
@@ -49,6 +49,8 @@ HOOK_NAME = "protect_push_safety"
 SEVERITY = "CRITICAL"
 
 _CLAUDE_AUTHOR_EMAIL = "noreply@anthropic.com"
+_CODEX_AUTHOR_EMAIL = "noreply@openai.com"
+_ALLOWED_AUTHOR_EMAILS = {_CLAUDE_AUTHOR_EMAIL, _CODEX_AUTHOR_EMAIL}
 
 _STMT_START = r"(?:^|&&|\|\||;|\n|\||\(|`|\bdo\b|\bthen\b|\belse\b)\s*"
 _GIT_GLOBAL_OPT = r"(?:-c\s+\S+|-C\s+\S+|--\S+(?:=\S+)?|-[A-Za-z])"
@@ -127,7 +129,7 @@ def main():
             return
 
     email = head_author_email()
-    if email is not None and email != _CLAUDE_AUTHOR_EMAIL:
+    if email is not None and email not in _ALLOWED_AUTHOR_EMAILS:
         decision = require_decision_or_deny(
             HOOK_NAME, "HIGH", command,
             "Fix authorship or GitHub marks it Unverified. "
@@ -138,8 +140,8 @@ def main():
             HOOK_NAME,
             "Fix authorship or GitHub marks it Unverified. "
             f"HEAD commit's author email is {email!r}, not "
-            f"{_CLAUDE_AUTHOR_EMAIL!r}. Run `git config user.email "
-            f"{_CLAUDE_AUTHOR_EMAIL} && git config user.name Claude` then "
+            f"one of {_ALLOWED_AUTHOR_EMAILS!r}. Configure the commit "
+            "author for the active tool and "
             "re-author HEAD (amend or rebase --exec) before pushing. No "
             "override for this one - just fix it.",
             severity="HIGH", target=command, decision=decision,
