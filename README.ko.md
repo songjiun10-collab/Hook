@@ -127,6 +127,10 @@ python3 -m unittest discover -s tests
   정확히 이 이유 때문임 - 이 프레임워크 위에 새 가드를 만든다면 똑같이
   할 것.
 
+## 관련 프로젝트
+
+이 플러그인은 **집행(enforcement)** 계층임 — 위험한 행동이 이미 일어나려는 순간 막는 역할. 애초에 에이전트가 그 행동에 손대지 않도록 만드는 판단력 자체는 다루지 않음. 그 부분 — 트레이드오프 저울질, 근본원인 디버깅, 보안 리뷰, 서브에이전트 위임 등 에이전트가 작업 전/중에 적용하는 시니어/프린시펄급 사고방식 — 은 [songjiun10-collab/Senior-thinking-skills](https://github.com/songjiun10-collab/Senior-thinking-skills)를 참고. 둘은 독립적이고 따로 설치 가능하며, 같이 쓸 때 서로 더 쓸모 있음.
+
 ## 라이선스
 
 MIT

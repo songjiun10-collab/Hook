@@ -133,6 +133,10 @@ this repo's own `hooks/violations_log.jsonl`.
   specifically because of this; if you build a new guard on this
   framework, do the same.
 
+## Related
+
+This plugin is the **enforcement** layer — it stops a dangerous action once one is already about to happen. It doesn't cover the judgment that should keep an agent from reaching for that action in the first place. For that — senior/principal-level thinking disciplines (weighing tradeoffs, root-cause debugging, security review, subagent delegation, and more) applied before and while an agent works — see [songjiun10-collab/Senior-thinking-skills](https://github.com/songjiun10-collab/Senior-thinking-skills). The two are independent and installable separately; each is more useful with the other.
+
 ## License
 
 MIT
