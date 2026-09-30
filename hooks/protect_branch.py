@@ -13,14 +13,14 @@ import re
 import subprocess
 import sys
 
-from _hook_common import (allow, allow_with_override, bash_override,
-                           high_tier_decision, require_decision_or_deny)
+from _hook_common import (_HEREDOC_RE, allow, allow_with_override,
+                           bash_override, high_tier_decision,
+                           require_decision_or_deny)
 
 HOOK_NAME = "protect_branch"
 SEVERITY = "HIGH"
 
 _STMT_START = r"(?:^|&&|\|\||;|\n|\||\(|`|\bdo\b|\bthen\b|\belse\b)\s*"
-_HEREDOC_RE = re.compile(r"<<-?\s*[\"']?(\w+)[\"']?.*?\n.*?^\1\b", re.DOTALL | re.MULTILINE)
 _COMMIT_OR_PUSH_RE = re.compile(_STMT_START + r"git\s+(commit|push)\b")
 
 _DEFAULT_BRANCH_NAMES = {"main", "master"}

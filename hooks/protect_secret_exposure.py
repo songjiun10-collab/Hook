@@ -31,10 +31,14 @@ HOOK_NAME = "protect_secret_exposure"
 SEVERITY = "HIGH"
 
 _SECRET_PATTERNS = [
-    ("AWS Access Key", re.compile(r"AKIA[0-9A-Z]{16}")),
+    ("AWS Access Key", re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16}")),
     ("GitHub Token", re.compile(r"gh[pousr]_[A-Za-z0-9]{36,}")),
+    ("GitHub Fine-Grained PAT", re.compile(r"github_pat_[A-Za-z0-9_]{20,}")),
     ("Private Key Header", re.compile(r"-----BEGIN (RSA |EC |OPENSSH |)?PRIVATE KEY-----")),
     ("Slack Token", re.compile(r"xox[baprs]-[0-9A-Za-z-]{10,48}")),
+    ("Slack App-Level Token", re.compile(r"xapp-[0-9A-Za-z-]{10,}")),
+    ("Slack Workflow Token", re.compile(r"xwfp-[0-9A-Za-z-]{10,}")),
+    ("Slack Token Exchange", re.compile(r"xoxe[.-][0-9A-Za-z-]{10,}")),
 ]
 
 
@@ -45,12 +49,28 @@ def read_input():
 def find_secret_pattern(text):
     """Returns the matched pattern's name if `text` contains something that
     looks like a live credential, else None."""
+    match = _find_secret_match(text)
+    return match[0] if match else None
+
+
+def _find_secret_match(text):
+    """Like find_secret_pattern(), but also returns the compiled pattern
+    that matched, so callers can redact exactly what was found (see
+    redact_secret())."""
     if not text:
         return None
     for name, pattern in _SECRET_PATTERNS:
         if pattern.search(text):
-            return name
+            return name, pattern
     return None
+
+
+def redact_secret(text, pattern):
+    """Replaces every match of `pattern` in `text` with a fixed
+    placeholder - used so a Bash command that matched a secret pattern
+    never has the live credential copied verbatim into target= (and, via
+    that, into violations_log.jsonl/override_audit.jsonl)."""
+    return pattern.sub("[REDACTED-SECRET]", text)
 
 
 def _edit_write_content(tool_input):
@@ -77,10 +97,19 @@ def main():
         allow()
         return
 
-    pattern_name = find_secret_pattern(content)
-    if pattern_name is None:
+    match = _find_secret_match(content)
+    if match is None:
         allow()
         return
+    pattern_name, pattern = match
+
+    if tool_name == "Bash":
+        # Redact once here - every downstream call (require_decision_or_deny/
+        # bash_override/deny/allow_with_override) must reuse this exact
+        # value so the target the deny message advertises is the same one
+        # the agent later reuses, and so the live credential never lands in
+        # violations_log.jsonl/override_audit.jsonl.
+        target = redact_secret(target, pattern)
 
     decision = require_decision_or_deny(
         HOOK_NAME, SEVERITY, target,
